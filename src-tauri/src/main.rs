@@ -224,10 +224,30 @@ const LINKS_SHIM: &str = r#"
 
   const nativeOpen = window.open;
   window.open = function (url) {
-    if (isHttp(url)) {
-      openExternal(String(url));
+    const target = String(url == null ? "" : url);
+
+    if (isHttp(target)) {
+      openExternal(target);
       return null;
     }
+
+    // Sites often do `const w = window.open(); w.location = url;`. Returning null
+    // makes that throw, so hand back a stub that forwards the assignment.
+    if (!target) {
+      return {
+        closed: false,
+        focus() {},
+        blur() {},
+        close() {},
+        postMessage() {},
+        location: {
+          set href(value) {
+            if (isHttp(value)) openExternal(String(value));
+          },
+        },
+      };
+    }
+
     return nativeOpen.apply(window, arguments);
   };
 })();
@@ -361,6 +381,25 @@ fn save_geometry(
     }
     if let Ok(mut state) = store.state.lock() {
         *state = snapshot;
+    }
+}
+
+/// Append-only diagnostic log for link handling. Capped so it cannot grow forever.
+fn debug_log(app: &tauri::AppHandle, message: &str) {
+    use std::io::Write;
+
+    let Ok(dir) = app.path().app_config_dir() else {
+        return;
+    };
+    let path = dir.join("link-debug.log");
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > 64 * 1024 {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "{}", message);
     }
 }
 
@@ -529,12 +568,19 @@ fn get_config(
 
 #[tauri::command]
 fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    debug_log(&app, &format!("open_external {url}"));
+
     if !(url.starts_with("http://") || url.starts_with("https://")) {
+        debug_log(&app, "open_external rejected: not http(s)");
         return Err("only http(s) URLs can be opened".into());
     }
-    app.opener()
-        .open_url(url, None::<&str>)
-        .map_err(|error| error.to_string())
+    match app.opener().open_url(url, None::<&str>) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            debug_log(&app, &format!("open_external failed: {error}"));
+            Err(error.to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -734,6 +780,7 @@ fn main() {
             // system browser instead of dropping them silently.
             let link_handle = handle.clone();
             builder = builder.on_new_window(move |url, _features| {
+                debug_log(&link_handle, &format!("new_window {url}"));
                 let _ = link_handle.opener().open_url(url.as_str(), None::<&str>);
                 NewWindowResponse::Deny
             });
@@ -750,6 +797,7 @@ fn main() {
                 .and_then(|url| url.host_str().map(|host| host.to_string()));
             let allowed_hosts = config.allowed_hosts.clone();
             builder = builder.on_navigation(move |url| {
+                debug_log(&nav_handle, &format!("nav {url}"));
                 if url.host_str() == Some("webview-shell-open.invalid") {
                     let target = url
                         .query_pairs()
