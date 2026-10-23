@@ -1,0 +1,15 @@
+{
+  "name": "webview-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Generic webview shell: point it at any URL, with optional tray / autostart / global shortcut",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.1"
+  }
+}

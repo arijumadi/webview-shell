@@ -1,0 +1,13 @@
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+*.log
+.DS_Store
+Thumbs.db
+
+# user config produced next to the exe
+webview-shell.json
+
+# python
+__pycache__/
+*.pyc

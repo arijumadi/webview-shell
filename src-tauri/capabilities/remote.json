@@ -1,0 +1,9 @@
+{
+  "identifier": "remote-notify",
+  "description": "Wrapped sites may post native notifications. No plugin or core commands are granted - only the app's own commands, and those check the caller origin themselves.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://*", "http://*"]
+  },
+  "permissions": []
+}

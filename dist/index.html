@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Webview Shell — Setup</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="card">
+    <header>
+      <div class="logo">◧</div>
+      <div>
+        <h1>Webview Shell</h1>
+        <p class="sub">Wrap any URL in a desktop window. Configure it once, saved to <code>webview-shell.json</code>.</p>
+      </div>
+    </header>
+
+    <form id="form">
+      <label>
+        <span>URL</span>
+        <input id="url" type="url" placeholder="https://app.example.com" required autofocus />
+      </label>
+
+      <label>
+        <span>Window title</span>
+        <input id="title" type="text" placeholder="My App" />
+      </label>
+
+      <div class="row">
+        <label class="half">
+          <span>Width</span>
+          <input id="width" type="number" min="320" value="1200" />
+        </label>
+        <label class="half">
+          <span>Height</span>
+          <input id="height" type="number" min="240" value="800" />
+        </label>
+      </div>
+
+      <label>
+        <span>Global shortcut <em>(optional)</em></span>
+        <input id="shortcut" type="text" placeholder="CmdOrCtrl+Shift+Space" />
+      </label>
+
+      <label>
+        <span>User agent <em>(optional: &ldquo;chrome&rdquo; or a full string)</em></span>
+        <input id="ua" type="text" placeholder="chrome" />
+      </label>
+
+      <label>
+        <span>JS inject <em>(optional, one path per line)</em></span>
+        <textarea id="inject" rows="3" placeholder="inject/hide-ads.js"></textarea>
+      </label>
+
+      <div class="checks">
+        <label class="check"><input id="tray" type="checkbox" checked /> <span>Tray icon</span></label>
+        <label class="check"><input id="autostart" type="checkbox" /> <span>Start on login</span></label>
+      </div>
+
+      <button type="submit" id="save">Save &amp; Launch</button>
+      <p id="status" class="status" hidden></p>
+    </form>
+
+    <footer>
+      <p>CLI works too: <code>webview-shell.exe --url https://x.com --tray --shortcut CmdOrCtrl+Shift+Space</code></p>
+      <p>Tray and autostart changes apply after the app restarts.</p>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

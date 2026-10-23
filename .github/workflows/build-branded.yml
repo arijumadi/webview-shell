@@ -1,0 +1,175 @@
+name: build-branded
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "App name (also used for the exe and folder)"
+        required: true
+        type: string
+      url:
+        description: "URL to wrap"
+        required: true
+        type: string
+      icon_url:
+        description: "Icon URL, square PNG/SVG at least 512px (optional)"
+        required: false
+        type: string
+      icon_path:
+        description: "Icon path in the repo, e.g. branding/logo.svg (takes priority over icon_url and favicon)"
+        required: false
+        type: string
+      version:
+        description: "Version"
+        required: false
+        default: "0.1.0"
+        type: string
+      width:
+        description: "Window width"
+        required: false
+        default: "1200"
+        type: string
+      height:
+        description: "Window height"
+        required: false
+        default: "800"
+        type: string
+      tray:
+        description: "Tray icon"
+        required: false
+        default: true
+        type: boolean
+      autostart:
+        description: "Start on login"
+        required: false
+        default: false
+        type: boolean
+      shortcut:
+        description: "Global shortcut (e.g. CmdOrCtrl+Shift+Space)"
+        required: false
+        type: string
+      user_agent:
+        description: "Empty = default, 'chrome' = Chrome UA, or a full string"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  branded:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute slug
+        id: meta
+        shell: bash
+        env:
+          APP_NAME: ${{ inputs.name }}
+        run: |
+          slug=$(printf '%s' "$APP_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\+/-/g; s/^-//; s/-$//')
+          if [ -z "$slug" ]; then echo "::error::name does not produce a valid slug"; exit 1; fi
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "slug: $slug"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "out/${{ steps.meta.outputs.slug }}/src-tauri -> target"
+
+      - name: Install shell dependencies
+        run: npm ci
+
+      - name: Resolve icon from repo
+        id: repo_icon
+        if: inputs.icon_path != ''
+        shell: bash
+        env:
+          ICON_IN_REPO: ${{ inputs.icon_path }}
+        run: |
+          if [ ! -f "$ICON_IN_REPO" ]; then
+            echo "::error::icon_path not found in the repo: $ICON_IN_REPO"
+            exit 1
+          fi
+          echo "path=$ICON_IN_REPO" >> "$GITHUB_OUTPUT"
+          echo "icon from repo: $ICON_IN_REPO"
+
+      - name: Download icon
+        if: inputs.icon_url != '' && inputs.icon_path == ''
+        shell: bash
+        env:
+          ICON_URL: ${{ inputs.icon_url }}
+        run: |
+          mkdir -p branding
+          curl -fsSL "$ICON_URL" -o branding/icon.png
+          file branding/icon.png
+
+      - name: Fetch site icon (favicon)
+        id: site_icon
+        if: inputs.icon_url == '' && inputs.icon_path == ''
+        shell: bash
+        env:
+          APP_URL: ${{ inputs.url }}
+        run: |
+          mkdir -p branding
+          python -m pip install --quiet --disable-pip-version-check pillow
+          icon=$(python scripts/fetch-icon.py "$APP_URL" branding/icon) || true
+          if [ -n "$icon" ]; then
+            echo "path=$icon" >> "$GITHUB_OUTPUT"
+            echo "icon: $icon"
+          else
+            echo "::warning::no favicon found, falling back to the default webview-shell icon"
+          fi
+
+      - name: Generate and build
+        shell: pwsh
+        env:
+          APP_NAME: ${{ inputs.name }}
+          APP_URL: ${{ inputs.url }}
+          APP_VERSION: ${{ inputs.version }}
+          APP_WIDTH: ${{ inputs.width }}
+          APP_HEIGHT: ${{ inputs.height }}
+          APP_TRAY: ${{ inputs.tray }}
+          APP_AUTOSTART: ${{ inputs.autostart }}
+          APP_SHORTCUT: ${{ inputs.shortcut }}
+          APP_UA: ${{ inputs.user_agent }}
+          ICON_PATH: ${{ steps.repo_icon.outputs.path || steps.site_icon.outputs.path }}
+        run: |
+          $params = @{
+            Name      = $env:APP_NAME
+            Url       = $env:APP_URL
+            Version   = $env:APP_VERSION
+            Width     = [int]$env:APP_WIDTH
+            Height    = [int]$env:APP_HEIGHT
+            UserAgent = $env:APP_UA
+          }
+          if ($env:APP_TRAY -eq "true") { $params.Tray = $true }
+          if ($env:APP_AUTOSTART -eq "true") { $params.Autostart = $true }
+          if ($env:APP_SHORTCUT) { $params.Shortcut = $env:APP_SHORTCUT }
+
+          $icon = if ($env:ICON_PATH) { $env:ICON_PATH } elseif (Test-Path "branding/icon.png") { "branding/icon.png" } else { "" }
+          if ($icon) { $params.Icon = $icon }
+
+          ./scripts/make-app.ps1 @params
+
+      - name: Upload branded artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.slug }}-windows
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            out/${{ steps.meta.outputs.slug }}/src-tauri/target/release/*.exe
+            out/${{ steps.meta.outputs.slug }}/src-tauri/target/release/bundle/nsis/*.exe
+            out/${{ steps.meta.outputs.slug }}/src-tauri/target/release/bundle/msi/*.msi
