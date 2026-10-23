@@ -105,19 +105,34 @@ const ZOOM_SHIM: &str = r#"
 /// If IPC is unavailable this shim steps aside and leaves the original API alone.
 const NOTIFY_SHIM: &str = r#"
 (() => {
-  if (!("Notification" in window)) return;
-
+  // No early return when __TAURI__ is missing: remote pages may not get the global,
+  // so fall back to a navigation the Rust side intercepts (same trick as links).
   const api = window.__TAURI__ && window.__TAURI__.core;
-  if (!api || typeof api.invoke !== "function") return;
+  const invoke = api && typeof api.invoke === "function" ? api.invoke : null;
+  const HOP = "https://webview-shell-notify.invalid/?";
 
-  const invoke = api.invoke;
+  const hop = (title, body) => {
+    window.location.href =
+      HOP + "title=" + encodeURIComponent(title) + "&body=" + encodeURIComponent(body || "");
+  };
+
+  const forward = (title, body) => {
+    const safeTitle = String(title == null ? "" : title);
+    const safeBody = String(body == null ? "" : body);
+    if (invoke) {
+      invoke("notify", { title: safeTitle, body: safeBody }).catch(() => hop(safeTitle, safeBody));
+    } else {
+      hop(safeTitle, safeBody);
+    }
+  };
+
   const Original = window.Notification;
 
   class BridgedNotification extends EventTarget {
     constructor(title, options) {
       super();
       options = options || {};
-      this.title = String(title);
+      this.title = String(title == null ? "" : title);
       this.body = String(options.body || "");
       this.tag = String(options.tag || "");
       this.onclick = null;
@@ -135,16 +150,10 @@ const NOTIFY_SHIM: &str = r#"
       };
       this._close = close;
 
-      invoke("notify", { title: this.title, body: this.body })
-        .then(() => {
-          const event = new Event("show");
-          if (typeof this.onshow === "function") this.onshow(event);
-          this.dispatchEvent(event);
-        })
-        .catch(() => {
-          // IPC denied (no remote capability) - let the browser try.
-          try { new Original(this.title, options); } catch (_) {}
-        });
+      forward(this.title, this.body);
+      const event = new Event("show");
+      if (typeof this.onshow === "function") this.onshow(event);
+      this.dispatchEvent(event);
     }
 
     close() {
@@ -161,11 +170,24 @@ const NOTIFY_SHIM: &str = r#"
     }
   }
 
-  Object.defineProperty(window, "Notification", {
-    value: BridgedNotification,
-    configurable: true,
-    writable: true,
-  });
+  if (Original) {
+    Object.defineProperty(window, "Notification", {
+      value: BridgedNotification,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  // Sites that go through a service worker instead of `new Notification`.
+  const registration = window.ServiceWorkerRegistration;
+  if (registration && registration.prototype && registration.prototype.showNotification) {
+    const original = registration.prototype.showNotification;
+    registration.prototype.showNotification = function (title, options) {
+      forward(title, options && options.body);
+      return Promise.resolve();
+    };
+    registration.prototype.__webviewShellOriginalShowNotification = original;
+  }
 })();
 "#;
 
@@ -565,8 +587,8 @@ fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+/// Shared toast path for both transports (IPC command and navigation hop).
+fn show_toast(app: &tauri::AppHandle, title: &str, body: &str) -> Result<(), String> {
     // Cap the payload so a page cannot flood the toast queue with huge strings.
     let title: String = title.chars().take(120).collect();
     let body: String = body.chars().take(400).collect();
@@ -577,6 +599,11 @@ fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), Stri
         .body(body)
         .show()
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
+    show_toast(&app, &title, &body)
 }
 
 #[tauri::command]
@@ -792,6 +819,22 @@ fn main() {
                 .and_then(|url| url.host_str().map(|host| host.to_string()));
             let allowed_hosts = config.allowed_hosts.clone();
             builder = builder.on_navigation(move |url| {
+                if url.host_str() == Some("webview-shell-notify.invalid") {
+                    let mut title = String::new();
+                    let mut body = String::new();
+                    for (key, value) in url.query_pairs() {
+                        match key.as_ref() {
+                            "title" => title = value.to_string(),
+                            "body" => body = value.to_string(),
+                            _ => {}
+                        }
+                    }
+                    if !title.is_empty() {
+                        let _ = show_toast(&nav_handle, &title, &body);
+                    }
+                    return false;
+                }
+
                 if url.host_str() == Some("webview-shell-open.invalid") {
                     let target = url
                         .query_pairs()
