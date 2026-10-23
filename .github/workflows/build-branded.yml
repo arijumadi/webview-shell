@@ -147,6 +147,22 @@ jobs:
             echo "::warning::no favicon found, falling back to the default webview-shell icon"
           fi
 
+      - name: Fall back to a repo icon named after the slug
+        id: slug_icon
+        if: steps.repo_icon.outputs.path == '' && steps.site_icon.outputs.path == ''
+        shell: bash
+        env:
+          SLUG: ${{ steps.meta.outputs.slug }}
+        run: |
+          for ext in svg png; do
+            if [ -f "branding/$SLUG.$ext" ]; then
+              echo "path=branding/$SLUG.$ext" >> "$GITHUB_OUTPUT"
+              echo "icon from slug match: branding/$SLUG.$ext"
+              exit 0
+            fi
+          done
+          echo "no branding/$SLUG.* found, using the default icon"
+
       - name: Generate and build
         shell: pwsh
         env:
@@ -162,7 +178,7 @@ jobs:
           APP_CLOSE_TO_TRAY: ${{ inputs.close_to_tray }}
           APP_CAMERA: ${{ inputs.camera }}
           APP_MICROPHONE: ${{ inputs.microphone }}
-          ICON_PATH: ${{ steps.repo_icon.outputs.path || steps.site_icon.outputs.path }}
+          ICON_PATH: ${{ steps.repo_icon.outputs.path || steps.site_icon.outputs.path || steps.slug_icon.outputs.path }}
         run: |
           $params = @{
             Name      = $env:APP_NAME
