@@ -47,7 +47,7 @@ Latest build: **[v0.1.0](https://github.com/arijumadi/webview-shell/releases/lat
 | Drag & drop files | automatic | drag-to-upload works |
 | User agent | `--ua chrome` / `--ua "<string>"` | also changes the HTTP header |
 | JS inject | `--inject file.js` | runs before the page is parsed |
-| Multiple profiles | `--config file.json` | separate sessions/cookies per config |
+| Multiple configs | `--config file.json` | one binary, several sites — but they share one profile |
 
 Everything can be turned off: `--no-tray`, `--no-autostart`, `--no-zoom`, `--no-notify`.
 
@@ -186,7 +186,9 @@ Create several configs and pick one with `--config`:
 .\webview-shell.exe --config D:\apps\checkout.json
 ```
 
-Cookies and sessions are isolated per config, so different accounts work side by side.
+Note: configs share the same app identifier, so they also share cookies and storage.
+Running two configs against the same site gives you the same session, not two accounts.
+Isolated profiles are not implemented yet — that needs a per-config `dataDirectory`.
 
 ### Chat apps (WhatsApp / Telegram)
 
@@ -365,6 +367,7 @@ reach (local/VPN), fetch the icon on your machine and commit it under `branding/
 | Close button | quits the app instead of hiding to tray |
 | Zoom | CSS zoom, not native browser zoom |
 | Cross-compilation | unsupported; build per OS |
+| Profile isolation | `--config` shares cookies; two accounts on the same site need two builds |
 
 ## License & logos
 
