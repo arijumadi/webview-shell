@@ -173,8 +173,8 @@ const NOTIFY_SHIM: &str = r#"
 ///
 /// WebView2 popup handling proved unreliable for this case, so this works in layers:
 ///   1. IPC command `open_external` (same channel as notifications)
-///   2. fallback: navigate to `webview-shell-open:<url>`, which the Rust side
-///      intercepts in `on_navigation` and hands to the system browser
+///   2. fallback: navigate to an https hop host that the Rust side intercepts
+///      in `on_navigation` and hands to the system browser (no OS dialog)
 ///   3. `window.open` is also wrapped, for sites that skip the anchor element
 const LINKS_SHIM: &str = r#"
 (() => {
@@ -183,8 +183,12 @@ const LINKS_SHIM: &str = r#"
   const api = window.__TAURI__ && window.__TAURI__.core;
   const invoke = api && typeof api.invoke === "function" ? api.invoke : null;
 
+  // A custom scheme makes WebView2 show an "open link?" dialog that cannot succeed.
+  // Navigate to an https host we intercept in on_navigation instead.
+  const HOP = "https://webview-shell-open.invalid/?url=";
+
   const handoff = (url) => {
-    window.location.href = "webview-shell-open:" + url;
+    window.location.href = HOP + encodeURIComponent(url);
   };
 
   const openExternal = (url) => {
@@ -734,7 +738,7 @@ fn main() {
                 NewWindowResponse::Deny
             });
 
-            // Navigation guard. Always installed so the `webview-shell-open:` handoff
+            // Navigation guard. Always installed so the link-shim hop handoff
             // from the click shim is caught; the cross-host rule itself is opt-in,
             // because OAuth redirects have to stay inside the webview.
             let nav_handle = handle.clone();
@@ -746,8 +750,16 @@ fn main() {
                 .and_then(|url| url.host_str().map(|host| host.to_string()));
             let allowed_hosts = config.allowed_hosts.clone();
             builder = builder.on_navigation(move |url| {
-                if let Some(target) = url.as_str().strip_prefix("webview-shell-open:") {
-                    let _ = nav_handle.opener().open_url(target.to_string(), None::<&str>);
+                if url.host_str() == Some("webview-shell-open.invalid") {
+                    let target = url
+                        .query_pairs()
+                        .find(|(key, _)| key == "url")
+                        .map(|(_, value)| value.to_string());
+                    if let Some(target) = target {
+                        if target.starts_with("http://") || target.starts_with("https://") {
+                            let _ = nav_handle.opener().open_url(target, None::<&str>);
+                        }
+                    }
                     return false;
                 }
                 if !allow_external || !matches!(url.scheme(), "http" | "https") {
