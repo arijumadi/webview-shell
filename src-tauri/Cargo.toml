@@ -1,6 +1,6 @@
 [package]
 name = "webview-shell"
-version = "0.1.0"
+version = "0.1.1"
 description = "Generic webview shell for any URL"
 authors = ["arijumadi"]
 edition = "2021"

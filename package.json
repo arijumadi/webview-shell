@@ -1,6 +1,6 @@
 {
   "name": "webview-shell",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Generic webview shell: point it at any URL, with optional tray / autostart / global shortcut",
   "type": "module",
