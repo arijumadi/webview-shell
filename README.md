@@ -12,6 +12,10 @@ whole app is ~3 MB on disk and idles at ~100 MB of RAM. The URL and the feature 
 at runtime, which means one binary serves many sites — no rebuild per target, no waiting on
 a 100 MB browser bundle to boot.
 
+Need a dedicated app instead of a generic shell? One command — or a GitHub Actions dispatch —
+generates a **branded build**: its own name, icon and identifier, with the URL baked into the
+binary. No sidecar config, nothing to set up on the user's machine.
+
 | | |
 |---|---|
 | portable exe | ~3.0 MB |
