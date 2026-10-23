@@ -22,13 +22,13 @@ WKWebView (macOS). No bundled Chromium.
 
 ## Download
 
-Latest build: **[v0.1.0](https://github.com/arijumadi/webview-shell/releases/latest)**
+Latest build: **[releases/latest](https://github.com/arijumadi/webview-shell/releases/latest)**
 
 | File | Size | Notes |
 |---|---|---|
-| [`webview-shell-0.1.0-x64-setup.exe`](https://github.com/arijumadi/webview-shell/releases/latest/download/webview-shell-0.1.0-x64-setup.exe) | 1.1 MB | NSIS installer — easiest |
-| [`webview-shell-0.1.0-x64.msi`](https://github.com/arijumadi/webview-shell/releases/latest/download/webview-shell-0.1.0-x64.msi) | 1.6 MB | MSI — for deployment / group policy |
-| [`webview-shell-0.1.0-x64-portable.exe`](https://github.com/arijumadi/webview-shell/releases/latest/download/webview-shell-0.1.0-x64-portable.exe) | 3.0 MB | Portable — drop it anywhere |
+| [`webview-shell-x64-setup.exe`](https://github.com/arijumadi/webview-shell/releases/latest/download/webview-shell-x64-setup.exe) | 1.2 MB | NSIS installer — easiest |
+| [`webview-shell-x64.msi`](https://github.com/arijumadi/webview-shell/releases/latest/download/webview-shell-x64.msi) | 1.6 MB | MSI — for deployment / group policy |
+| [`webview-shell-x64-portable.exe`](https://github.com/arijumadi/webview-shell/releases/latest/download/webview-shell-x64-portable.exe) | 3.0 MB | Portable — drop it anywhere |
 
 > The binaries are unsigned. If you download them through a browser, SmartScreen may warn
 > once — pick *More info → Run anyway*.
