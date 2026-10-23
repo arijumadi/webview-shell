@@ -52,6 +52,21 @@ on:
         description: "Empty = default, 'chrome' = Chrome UA, or a full string"
         required: false
         type: string
+      close_to_tray:
+        description: "Close button hides to tray instead of quitting (needs tray)"
+        required: false
+        default: false
+        type: boolean
+      camera:
+        description: "Grant camera permission to the page"
+        required: false
+        default: false
+        type: boolean
+      microphone:
+        description: "Grant microphone permission to the page"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -144,6 +159,9 @@ jobs:
           APP_AUTOSTART: ${{ inputs.autostart }}
           APP_SHORTCUT: ${{ inputs.shortcut }}
           APP_UA: ${{ inputs.user_agent }}
+          APP_CLOSE_TO_TRAY: ${{ inputs.close_to_tray }}
+          APP_CAMERA: ${{ inputs.camera }}
+          APP_MICROPHONE: ${{ inputs.microphone }}
           ICON_PATH: ${{ steps.repo_icon.outputs.path || steps.site_icon.outputs.path }}
         run: |
           $params = @{
@@ -157,6 +175,9 @@ jobs:
           if ($env:APP_TRAY -eq "true") { $params.Tray = $true }
           if ($env:APP_AUTOSTART -eq "true") { $params.Autostart = $true }
           if ($env:APP_SHORTCUT) { $params.Shortcut = $env:APP_SHORTCUT }
+          if ($env:APP_CLOSE_TO_TRAY -eq "true") { $params.CloseToTray = $true }
+          if ($env:APP_CAMERA -eq "true") { $params.Camera = $true }
+          if ($env:APP_MICROPHONE -eq "true") { $params.Microphone = $true }
 
           $icon = if ($env:ICON_PATH) { $env:ICON_PATH } elseif (Test-Path "branding/icon.png") { "branding/icon.png" } else { "" }
           if ($icon) { $params.Icon = $icon }

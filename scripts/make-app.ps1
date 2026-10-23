@@ -35,6 +35,11 @@ param(
     [int]$Width = 1200,
     [int]$Height = 800,
     [string]$Targets = "",
+    [switch]$CloseToTray,
+    [switch]$Camera,
+    [switch]$Microphone,
+    [switch]$ExternalInBrowser,
+    [string[]]$AllowedHosts = @(),
     [switch]$SkipBuild
 )
 
@@ -126,6 +131,11 @@ $defaultConfig = [ordered]@{
     shortcut  = $Shortcut
     userAgent = $UserAgent
     inject    = @($Inject)
+    closeToTray = [bool]$CloseToTray
+    camera = [bool]$Camera
+    microphone = [bool]$Microphone
+    openExternalInBrowser = [bool]$ExternalInBrowser
+    allowedHosts = @($AllowedHosts)
 }
 $json = $defaultConfig | ConvertTo-Json -Compress -Depth 5
 

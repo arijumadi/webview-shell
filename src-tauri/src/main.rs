@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    webview::{NewWindowResponse, PermissionKind, PermissionResponse},
     Manager, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri_plugin_notification::NotificationExt;
@@ -185,6 +187,14 @@ struct AppConfig {
     #[serde(rename = "zoomHotkeys", alias = "zoom_hotkeys")]
     zoom_hotkeys: bool,
     notifications: bool,
+    #[serde(rename = "closeToTray", alias = "close_to_tray")]
+    close_to_tray: bool,
+    #[serde(rename = "openExternalInBrowser", alias = "open_external_in_browser")]
+    open_external_in_browser: bool,
+    #[serde(rename = "allowedHosts", alias = "allowed_hosts")]
+    allowed_hosts: Vec<String>,
+    camera: bool,
+    microphone: bool,
 }
 
 impl Default for AppConfig {
@@ -201,6 +211,11 @@ impl Default for AppConfig {
             user_agent: String::new(),
             zoom_hotkeys: true,
             notifications: true,
+            close_to_tray: false,
+            open_external_in_browser: false,
+            allowed_hosts: Vec::new(),
+            camera: false,
+            microphone: false,
         }
     }
 }
@@ -389,6 +404,20 @@ fn apply_args(config: &mut AppConfig, args: &[String]) {
             "--no-zoom" => config.zoom_hotkeys = false,
             "--notify" => config.notifications = true,
             "--no-notify" => config.notifications = false,
+            "--close-to-tray" => config.close_to_tray = true,
+            "--no-close-to-tray" => config.close_to_tray = false,
+            "--external-in-browser" => config.open_external_in_browser = true,
+            "--no-external-in-browser" => config.open_external_in_browser = false,
+            "--allow-host" => {
+                if let Some(value) = value {
+                    config.allowed_hosts.push(value);
+                    index += 1;
+                }
+            }
+            "--camera" => config.camera = true,
+            "--no-camera" => config.camera = false,
+            "--microphone" => config.microphone = true,
+            "--no-microphone" => config.microphone = false,
             _ => {}
         }
 
@@ -491,6 +520,7 @@ fn main() {
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_opener::init())
         .on_window_event(|window, event| {
             let Some(store) = window.app_handle().try_state::<WindowStateStore>() else {
                 return;
@@ -510,10 +540,30 @@ fn main() {
                         state.y = Some(position.y);
                     }
                 }
-                tauri::WindowEvent::CloseRequested { .. }
-                | tauri::WindowEvent::Destroyed
-                | tauri::WindowEvent::Focused(false) => {
-                    if let (Ok(maximized), Ok(size)) = (window.is_maximized(), window.inner_size()) {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    // Close-to-tray: only meaningful when there is a tray to come back from.
+                    if let Some(app_state) = window.app_handle().try_state::<AppState>() {
+                        let hide = app_state
+                            .config
+                            .lock()
+                            .map(|config| config.close_to_tray && config.tray)
+                            .unwrap_or(false);
+                        if hide {
+                            api.prevent_close();
+                            let _ = window.hide();
+                        }
+                    }
+                    if let (Ok(maximized), Ok(size)) =
+                        (window.is_maximized(), window.inner_size())
+                    {
+                        let position = window.outer_position().ok().map(|p| (p.x, p.y));
+                        save_geometry(&store, maximized, (size.width, size.height), position);
+                    }
+                }
+                tauri::WindowEvent::Destroyed | tauri::WindowEvent::Focused(false) => {
+                    if let (Ok(maximized), Ok(size)) =
+                        (window.is_maximized(), window.inner_size())
+                    {
                         let position = window.outer_position().ok().map(|p| (p.x, p.y));
                         save_geometry(&store, maximized, (size.width, size.height), position);
                     }
@@ -602,6 +652,50 @@ fn main() {
                 // Native zoom is off on purpose: the injected shim owns zoom so the
                 // level can be persisted per site (WebView2 exposes no zoom getter).
                 .zoom_hotkeys_enabled(false);
+
+            // `window.open` has no home in a single-window shell, so send popups to the
+            // system browser instead of dropping them silently.
+            let link_handle = handle.clone();
+            builder = builder.on_new_window(move |url, _features| {
+                let _ = link_handle.opener().open_url(url.as_str(), None::<&str>);
+                NewWindowResponse::Deny
+            });
+
+            // Top-level navigation to another host is opt-in: OAuth redirects have to
+            // stay inside the webview to complete.
+            if config.open_external_in_browser {
+                let nav_handle = handle.clone();
+                let internal_host = config
+                    .url
+                    .parse::<tauri::Url>()
+                    .ok()
+                    .and_then(|url| url.host_str().map(|host| host.to_string()));
+                let allowed_hosts = config.allowed_hosts.clone();
+                builder = builder.on_navigation(move |url| {
+                    if !matches!(url.scheme(), "http" | "https") {
+                        return true;
+                    }
+                    let host = url.host_str().unwrap_or("");
+                    let matches = |candidate: &str| {
+                        host == candidate || host.ends_with(&format!(".{candidate}"))
+                    };
+                    let internal = internal_host.as_deref().map(matches).unwrap_or(false)
+                        || allowed_hosts.iter().any(|allowed| matches(allowed));
+                    if internal {
+                        return true;
+                    }
+                    let _ = nav_handle.opener().open_url(url.as_str(), None::<&str>);
+                    false
+                });
+            }
+
+            let camera = config.camera;
+            let microphone = config.microphone;
+            builder = builder.on_permission_request(move |_webview, kind| match kind {
+                PermissionKind::Camera if camera => PermissionResponse::Allow,
+                PermissionKind::Microphone if microphone => PermissionResponse::Allow,
+                _ => PermissionResponse::Default,
+            });
 
             // Applied before the window is created, so it opens at the remembered
             // size instead of jumping there a moment later.

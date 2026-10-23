@@ -48,6 +48,9 @@ Latest build: **[v0.1.0](https://github.com/arijumadi/webview-shell/releases/lat
 | User agent | `--ua chrome` / `--ua "<string>"` | also changes the HTTP header |
 | JS inject | `--inject file.js` | runs before the page is parsed |
 | Multiple configs | `--config file.json` | one binary, several sites — but they share one profile |
+| Close to tray | `--close-to-tray` | X hides the window instead of quitting |
+| Camera / microphone | `--camera --microphone` | grant media permissions to the page |
+| External links | `--external-in-browser` | cross-host navigation opens in the default browser |
 
 Everything can be turned off: `--no-tray`, `--no-autostart`, `--no-zoom`, `--no-notify`.
 
@@ -154,6 +157,11 @@ Flags are not persisted — they apply to that run only. Use a config file for p
 | `userAgent` | empty | Empty keeps the webview default |
 | `zoomHotkeys` | `true` | `Ctrl +/-/0` and `Ctrl`+wheel |
 | `notifications` | `true` | Bridge `Notification` → OS toast |
+| `closeToTray` | `false` | X hides to tray instead of quitting |
+| `camera` | `false` | Grant camera permission to the page |
+| `microphone` | `false` | Grant microphone permission to the page |
+| `openExternalInBrowser` | `false` | Cross-host navigation opens in the default browser |
+| `allowedHosts` | `[]` | Extra hosts kept inside the app when the above is on |
 | `inject` | `[]` | Script paths, relative to the exe folder |
 
 ## Flags
@@ -171,6 +179,11 @@ Flags are not persisted — they apply to that run only. Use a config file for p
 | `--ua "<string>"` | Custom UA, used verbatim |
 | `--zoom` / `--no-zoom` | Zoom hotkeys |
 | `--notify` / `--no-notify` | Notification bridge |
+| `--close-to-tray` / `--no-close-to-tray` | X hides to tray (requires `--tray`) |
+| `--external-in-browser` / `--no-external-in-browser` | Cross-host navigation opens outside |
+| `--allow-host <host>` | Keep an extra host inside the app (repeatable) |
+| `--camera` / `--no-camera` | Grant camera permission |
+| `--microphone` / `--no-microphone` | Grant microphone permission |
 | `--config <path>` | Use another config file |
 
 ---
@@ -262,6 +275,21 @@ Dropped files are handed to the page, so drag-to-upload works. This is not Tauri
 default — Tauri replaces WebView2's drag-drop handler to emit its own `DragDropEvent`,
 which means HTML5 drops never reach the page. The shell disables that handler because it
 does not use those events.
+
+### Close to tray, links, media permissions
+
+**Close to tray.** With `--close-to-tray` (and a tray icon), the close button hides the
+window instead of quitting. Quit through the tray menu. Ignored when the tray is disabled,
+so you can never lose the window.
+
+**Links.** `window.open` and `target="_blank"` always go to the system browser — a
+single-window shell has nowhere to put a popup. Cross-host navigation in the same tab is
+opt-in via `--external-in-browser`, because OAuth redirects must stay inside the webview to
+complete; add provider hosts with `--allow-host` when enabling it.
+
+**Media.** Camera and microphone are denied by default. Grant them with `--camera` /
+`--microphone`; the handler answers the webview's permission request instead of relying on
+a browser prompt that never appears.
 
 ### Login & OAuth
 
@@ -363,8 +391,6 @@ reach (local/VPN), fetch the icon on your machine and commit it under `branding/
 |---|---|
 | Google OAuth | **redirect** login usually works (WebView2 UA is Edge); flows that need a **popup** fail because Tauri blocks `window.open` |
 | Notification clicks | not forwarded to the page's `onclick` |
-| Mic / camera | no WebView2 permission handler yet (voice notes and calls may fail) |
-| Close button | quits the app instead of hiding to tray |
 | Zoom | CSS zoom, not native browser zoom |
 | Cross-compilation | unsupported; build per OS |
 | Profile isolation | `--config` shares cookies; two accounts on the same site need two builds |
