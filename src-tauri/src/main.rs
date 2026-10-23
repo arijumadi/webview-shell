@@ -169,6 +169,66 @@ const NOTIFY_SHIM: &str = r#"
 })();
 "#;
 
+/// Routes link clicks that would open a popup to the system browser.
+///
+/// WebView2 popup handling proved unreliable for this case, so this works in layers:
+///   1. IPC command `open_external` (same channel as notifications)
+///   2. fallback: navigate to `webview-shell-open:<url>`, which the Rust side
+///      intercepts in `on_navigation` and hands to the system browser
+///   3. `window.open` is also wrapped, for sites that skip the anchor element
+const LINKS_SHIM: &str = r#"
+(() => {
+  if (window.top !== window) return;
+
+  const api = window.__TAURI__ && window.__TAURI__.core;
+  const invoke = api && typeof api.invoke === "function" ? api.invoke : null;
+
+  const handoff = (url) => {
+    window.location.href = "webview-shell-open:" + url;
+  };
+
+  const openExternal = (url) => {
+    if (invoke) {
+      invoke("open_external", { url }).catch(() => handoff(url));
+    } else {
+      handoff(url);
+    }
+  };
+
+  const isHttp = (value) => /^https?:\/\//i.test(String(value || ""));
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target;
+      if (!target || typeof target.closest !== "function") return;
+      const anchor = target.closest("a[href]");
+      if (!anchor) return;
+
+      const href = anchor.href;
+      if (!isHttp(href)) return;
+
+      // Only links that ask for a new window/tab; same-tab navigation stays in-app.
+      if ((anchor.getAttribute("target") || "").toLowerCase() !== "_blank") return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      openExternal(href);
+    },
+    true
+  );
+
+  const nativeOpen = window.open;
+  window.open = function (url) {
+    if (isHttp(url)) {
+      openExternal(String(url));
+      return null;
+    }
+    return nativeOpen.apply(window, arguments);
+  };
+})();
+"#;
+
 /// Everything the shell needs to know, resolved from CLI flags on top of the
 /// JSON config that sits next to the executable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -464,6 +524,16 @@ fn get_config(
 }
 
 #[tauri::command]
+fn open_external(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("only http(s) URLs can be opened".into());
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), String> {
     // Cap the payload so a page cannot flood the toast queue with huge strings.
     let title: String = title.chars().take(120).collect();
@@ -631,6 +701,9 @@ fn main() {
                 scripts.push_str("\n;\n");
             }
 
+            scripts.push_str(LINKS_SHIM);
+            scripts.push_str("\n;\n");
+
             let start_url = if config.url.trim().is_empty() {
                 WebviewUrl::App("index.html".into())
             } else {
@@ -661,33 +734,37 @@ fn main() {
                 NewWindowResponse::Deny
             });
 
-            // Top-level navigation to another host is opt-in: OAuth redirects have to
-            // stay inside the webview to complete.
-            if config.open_external_in_browser {
-                let nav_handle = handle.clone();
-                let internal_host = config
-                    .url
-                    .parse::<tauri::Url>()
-                    .ok()
-                    .and_then(|url| url.host_str().map(|host| host.to_string()));
-                let allowed_hosts = config.allowed_hosts.clone();
-                builder = builder.on_navigation(move |url| {
-                    if !matches!(url.scheme(), "http" | "https") {
-                        return true;
-                    }
-                    let host = url.host_str().unwrap_or("");
-                    let matches = |candidate: &str| {
-                        host == candidate || host.ends_with(&format!(".{candidate}"))
-                    };
-                    let internal = internal_host.as_deref().map(matches).unwrap_or(false)
-                        || allowed_hosts.iter().any(|allowed| matches(allowed));
-                    if internal {
-                        return true;
-                    }
-                    let _ = nav_handle.opener().open_url(url.as_str(), None::<&str>);
-                    false
-                });
-            }
+            // Navigation guard. Always installed so the `webview-shell-open:` handoff
+            // from the click shim is caught; the cross-host rule itself is opt-in,
+            // because OAuth redirects have to stay inside the webview.
+            let nav_handle = handle.clone();
+            let allow_external = config.open_external_in_browser;
+            let internal_host = config
+                .url
+                .parse::<tauri::Url>()
+                .ok()
+                .and_then(|url| url.host_str().map(|host| host.to_string()));
+            let allowed_hosts = config.allowed_hosts.clone();
+            builder = builder.on_navigation(move |url| {
+                if let Some(target) = url.as_str().strip_prefix("webview-shell-open:") {
+                    let _ = nav_handle.opener().open_url(target.to_string(), None::<&str>);
+                    return false;
+                }
+                if !allow_external || !matches!(url.scheme(), "http" | "https") {
+                    return true;
+                }
+                let host = url.host_str().unwrap_or("");
+                let matches = |candidate: &str| {
+                    host == candidate || host.ends_with(&format!(".{candidate}"))
+                };
+                let internal = internal_host.as_deref().map(matches).unwrap_or(false)
+                    || allowed_hosts.iter().any(|allowed| matches(allowed));
+                if internal {
+                    return true;
+                }
+                let _ = nav_handle.opener().open_url(url.as_str(), None::<&str>);
+                false
+            });
 
             let camera = config.camera;
             let microphone = config.microphone;
@@ -818,7 +895,7 @@ fn main() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_config, save_config, notify])
+        .invoke_handler(tauri::generate_handler![get_config, save_config, notify, open_external])
         .run(tauri::generate_context!())
         .expect("error while running webview-shell");
 }
