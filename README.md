@@ -390,6 +390,7 @@ reach (local/VPN), fetch the icon on your machine and commit it under `branding/
 | Area | Status |
 |---|---|
 | Google OAuth | **redirect** login usually works (WebView2 UA is Edge); flows that need a **popup** fail because Tauri blocks `window.open` |
+| Notification toast | best effort: the bridge is compiled in, but toasts did not appear in at least one reported setup (portable builds have no AUMID). Treat it as unreliable. |
 | Notification clicks | not forwarded to the page's `onclick` |
 | Zoom | CSS zoom, not native browser zoom |
 | Cross-compilation | unsupported; build per OS |
