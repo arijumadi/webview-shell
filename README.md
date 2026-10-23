@@ -4,11 +4,13 @@
 [![release](https://img.shields.io/github/v/release/arijumadi/webview-shell)](https://github.com/arijumadi/webview-shell/releases/latest)
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-Turn **any URL** into a desktop app — without Electron. The URL and the feature set are
-read at runtime, so a single binary can serve many sites without rebuilding.
+**Turn any URL into a desktop app.** Efficient by design: no Electron, no bundled Chromium —
+just the webview your OS already ships.
 
-Built on **Tauri v2** using the OS webview: WebView2 (Windows), WebKitGTK (Linux),
-WKWebView (macOS). No bundled Chromium.
+Built on **Tauri v2** (WebView2 on Windows, WebKitGTK on Linux, WKWebView on macOS), so the
+whole app is ~3 MB on disk and idles at ~100 MB of RAM. The URL and the feature set are read
+at runtime, which means one binary serves many sites — no rebuild per target, no waiting on
+a 100 MB browser bundle to boot.
 
 | | |
 |---|---|
