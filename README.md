@@ -43,7 +43,7 @@ Latest build: **[v0.1.0](https://github.com/arijumadi/webview-shell/releases/lat
 | Autostart | `--autostart` | declarative: off removes the entry |
 | Remembers size & position | automatic | read before the window is created, no jump |
 | Per-site zoom | `Ctrl` `+` `-` `0`, `Ctrl`+wheel | remembered per origin |
-| Native notifications | automatic | `new Notification(...)` → OS toast |
+| Native notifications | automatic | `new Notification(...)` → OS toast, also when minimised or in the tray |
 | Drag & drop files | automatic | drag-to-upload works |
 | User agent | `--ua chrome` / `--ua "<string>"` | also changes the HTTP header |
 | JS inject | `--inject file.js` | runs before the page is parsed |
@@ -262,13 +262,20 @@ from native browser zoom. At 100% there is no difference at all.
 
 ### Notifications
 
-`new Notification("Title", { body: "..." })` from the site is forwarded to an OS toast via
-the `notify` command. Remote pages are only allowed to call that one command — the
-`remote-notify` capability grants IPC to `http/https` origins with `permissions: []`, and
-`get_config`/`save_config` reject remote callers.
+`new Notification("Title", { body: "..." })` from the site becomes an OS toast — including
+while the window is minimised or hidden in the tray.
 
-Two limits: toasts usually only appear for the **installed** build (Windows needs a Start
-Menu shortcut as the AUMID), and clicking a toast is not forwarded to the page's `onclick`.
+Delivery is deliberately layered, because a remote page does not always get the
+`__TAURI__` global:
+
+1. `invoke("notify")` when IPC is available (capability `remote-notify`, `permissions: []`,
+   and `get_config`/`save_config` reject remote callers).
+2. otherwise a navigation to `webview-shell-notify.invalid?title=..&body=..`, which the Rust
+   side intercepts in `on_navigation`, shows as a toast and cancels.
+3. `ServiceWorkerRegistration.showNotification` is patched too, for sites that notify
+   through a service worker instead of `new Notification`.
+
+One limit remains: clicking a toast is not forwarded to the page's `onclick`.
 
 ### Drag & drop
 
@@ -395,7 +402,6 @@ reach (local/VPN), fetch the icon on your machine and commit it under `branding/
 | Area | Status |
 |---|---|
 | Google OAuth | **redirect** login usually works (WebView2 UA is Edge); flows that need a **popup** fail because Tauri blocks `window.open` |
-| Notification toast | best effort: the bridge is compiled in, but toasts did not appear in at least one reported setup (portable builds have no AUMID). Treat it as unreliable. |
 | Notification clicks | not forwarded to the page's `onclick` |
 | Zoom | CSS zoom, not native browser zoom |
 | Cross-compilation | unsupported; build per OS |
