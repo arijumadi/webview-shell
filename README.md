@@ -49,6 +49,7 @@ Latest build: **[v0.1.0](https://github.com/arijumadi/webview-shell/releases/lat
 | JS inject | `--inject file.js` | runs before the page is parsed |
 | Multiple configs | `--config file.json` | one binary, several sites — but they share one profile |
 | Close to tray | `--close-to-tray` | X hides the window instead of quitting |
+| Single instance | automatic | relaunching focuses the window that is already running |
 | Camera / microphone | `--camera --microphone` | grant media permissions to the page |
 | External links | `--external-in-browser` | cross-host navigation opens in the default browser |
 
@@ -281,6 +282,10 @@ does not use those events.
 **Close to tray.** With `--close-to-tray` (and a tray icon), the close button hides the
 window instead of quitting. Quit through the tray menu. Ignored when the tray is disabled,
 so you can never lose the window.
+
+**Single instance.** Launching the app again (Start Menu, taskbar, shortcut) does not open
+a second window — it shows and focuses the running one. If the new launch carries
+`--url <url>`, the existing window navigates there instead.
 
 **Links.** `window.open` and `target="_blank"` always go to the system browser — a
 single-window shell has nowhere to put a popup. Cross-host navigation in the same tab is

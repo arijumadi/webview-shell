@@ -391,6 +391,14 @@ fn exe_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// Pull `--url <value>` out of a command line, used when a second launch should
+/// retarget the already running window.
+fn url_from_args(args: &[String]) -> Option<&String> {
+    args.iter()
+        .position(|arg| arg == "--url")
+        .and_then(|index| args.get(index + 1))
+}
+
 fn find_config_arg(args: &[String]) -> Option<PathBuf> {
     let mut index = 0;
     while index < args.len() {
@@ -608,6 +616,20 @@ fn main() {
     apply_args(&mut config, &args);
 
     tauri::Builder::default()
+        // Must be registered first: a second launch has to exit before any other
+        // plugin initialises, and instead focus the window that is already running.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+                if let Some(raw) = url_from_args(&argv) {
+                    if let Ok(url) = raw.parse::<tauri::Url>() {
+                        let _ = window.navigate(url);
+                    }
+                }
+            }
+        }))
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             None,
