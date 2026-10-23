@@ -281,7 +281,10 @@ Delivery is deliberately layered, because a remote page does not always get the
 3. `ServiceWorkerRegistration.showNotification` is patched too, for sites that notify
    through a service worker instead of `new Notification`.
 
-One limit remains: clicking a toast is not forwarded to the page's `onclick`.
+Clicking a toast brings the window back and runs the page's own handler: the shim keeps the
+most recent `Notification` object and Rust calls into it through `eval`. Windows only reports
+the click while the toast is still on screen — once it has moved to the Action Center, the
+click is not delivered.
 
 ### Drag & drop
 
@@ -408,7 +411,6 @@ reach (local/VPN), fetch the icon on your machine and commit it under `branding/
 | Area | Status |
 |---|---|
 | Google OAuth | **redirect** login usually works (WebView2 UA is Edge); flows that need a **popup** fail because Tauri blocks `window.open` |
-| Notification clicks | not forwarded to the page's `onclick` |
 | Zoom | CSS zoom, not native browser zoom |
 | Cross-compilation | unsupported; build per OS |
 | Profile isolation | `--config` shares cookies; two accounts on the same site need two builds |

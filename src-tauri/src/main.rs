@@ -126,6 +126,21 @@ const NOTIFY_SHIM: &str = r#"
     }
   };
 
+  // Toast clicks arrive from Rust via eval; the page object is kept here so its
+  // onclick handler can run. Only the newest one is remembered, which is what chat
+  // apps need (focus the window, open the latest chat).
+  const pending = [];
+  window.__webviewShellNotifyClick = function () {
+    const latest = pending[pending.length - 1];
+    if (!latest) return;
+    pending.length = 0;
+    const event = new Event("click");
+    try {
+      if (typeof latest.onclick === "function") latest.onclick(event);
+    } catch (_) {}
+    latest.dispatchEvent(event);
+  };
+
   const Original = window.Notification;
 
   class BridgedNotification extends EventTarget {
@@ -149,6 +164,9 @@ const NOTIFY_SHIM: &str = r#"
         this.dispatchEvent(event);
       };
       this._close = close;
+
+      pending.push(this);
+      if (pending.length > 10) pending.shift();
 
       forward(this.title, this.body);
       const event = new Event("show");
@@ -720,6 +738,23 @@ fn main() {
         })
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            // Toast click -> bring the window back and let the page run its own onclick.
+            // Windows only reports this while the toast is still on screen.
+            let notification_handle = handle.clone();
+            let _ = app.notification().on_action(move |action| {
+                if action.action_id() != "tap" {
+                    return;
+                }
+                if let Some(window) = notification_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                    let _ = window.eval(
+                        "window.__webviewShellNotifyClick && window.__webviewShellNotifyClick();",
+                    );
+                }
+            });
 
             let state_dir = app.path().app_config_dir().unwrap_or_else(|_| exe_dir());
             let window_state_path = state_dir.join("window-state.json");
